@@ -1,0 +1,288 @@
+---
+title: "st"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=10, fig.height=10) 
+```
+
+```{r}
+install.packages("randomForest")
+library(randomForest)
+```
+
+```{r}
+install.packages("xtable")
+library(xtable)
+```
+
+
+
+```{r}
+install.packages("caret")
+library(caret)
+```
+
+```{r}
+install.packages("car")
+library(car)
+```
+
+
+```{r}
+install.packages("dplyr")
+library(dplyr)
+```
+
+```{r}
+install.packages("MASS")
+library(MASS)
+```
+```{r}
+install.packages("ipred")
+library(ipred)
+
+```
+
+```{r}
+install.packages("tree")
+library(tree)
+```
+
+
+```{r}
+install.packages("corrplot")
+library(corrplot)
+```
+
+
+```{r}
+install.packages(c('olsrr','leaps'))
+library('olsrr')
+library('leaps')
+
+```
+
+```{r}
+install.packages("ggplot2")
+library(ggplot2)
+```
+
+
+```{r}
+install.packages("pastecs")
+library(pastecs)
+```
+
+```{r}
+install.packages("mgcv")
+library(mgcv)
+```
+
+
+```{r}
+install.packages("nnet")
+library(nnet)
+```
+
+
+```{r}
+install.packages("mice")
+library(mice)
+```
+
+```{r}
+install.packages("factoextra")
+library(factoextra)
+```
+
+```{r}
+df = read.csv("house-data.csv") #loading the data into df
+print(head(df)) #some few records of the dataset
+```
+
+```{r}
+print(str(df))
+```
+```{r}
+#counting null values
+for (cname in names(df)) {
+  print(paste("number of null values for",cname,"=", sum(is.na(df[cname]))), sep=" ")
+}
+```
+```{r}
+no_null_data = df
+no_null_data = df[ , !(names(df) %in% c("Alley","PoolQC","Fence","MiscFeature",""))]
+no_null_data = mice(no_null_data, m = 10, seed=500) # using mice with cart method
+no_null_data = complete(no_null_data) #completing the imputed data
+no_null_data = na.omit(no_null_data)
+for (cname in names(no_null_data)) { #checking the number of null values after imputation
+  print(paste("number of null values for",cname,"=", sum(is.na(no_null_data[cname]))), sep=" ")
+}
+```
+
+```{r}
+numeric_col = unlist(lapply(no_null_data, is.numeric))
+data_numeric = no_null_data[, numeric_col]
+head(data_numeric)
+```
+
+
+```{r}
+round(stat.desc(data_numeric, norm = TRUE),3) # more numeric analysis of the imputed data using pastecs library rounded by 3 digits 
+```
+
+```{r}
+#scatter plot of salePrice
+ggplot(no_null_data) +
+  aes(x = SalePrice, y = YearBuilt) +
+  geom_point()
+```
+
+```{r}
+#heatmap of correlation
+corrplot(cor(data_numeric), "color", "upper")
+```
+```{r}
+boxplot(no_null_data$SalePrice)
+```
+```{r}
+hist(no_null_data$SalePrice)
+
+#end of Q1
+```
+
+```{r}
+#dividing OverallCond into poor,average, good based on their value
+no_null_data$OverallCond = cut(no_null_data$OverallCond, 
+                       breaks = c(1, 4, 7, 11), 
+                       labels = c("poor", "average", "good"),
+                       right = FALSE)
+```
+
+
+```{r}
+columns = c("BsmtCond","YearBuilt", "SalePrice", "OverallCond")
+model_data = no_null_data[columns]
+set.seed(100)
+trctrl_logistic = trainControl(method = "boot", savePredictions=TRUE, search = "random")
+logitcv = train(OverallCond ~ ., data = model_data, method = "glmnet", trControl=trctrl_logistic, family="multinomial", tune_length = 0)
+logitcv
+confusionMatrix(logitcv)
+```
+
+```{r}
+set.seed(100)
+trctrl_tree = trainControl(method = "cv", number = 10, savePredictions=TRUE)
+tree_fit = train(OverallCond ~., data = model_data, method = "rpart", trControl=trctrl_tree, tuneLength = 0)
+tree_fit
+confusionMatrix(tree_fit)
+
+#end of Q2
+```
+
+```{r}
+linear_model = lm(SalePrice ~ ., data_numeric)
+summary(linear_model)
+```
+
+
+```{r}
+set.seed(100)
+c = c("LotArea","OverallQual","OverallCond","YearBuilt", "TotalBsmtSF","GarageArea","SalePrice")
+lm_data = data_numeric[c]
+control <- trainControl(method='repeatedcv', number=10, repeats=3)
+
+set.seed(123)
+#Number randomly variable selected is mtry
+mtry = ncol(lm_data)/3
+tunegrid = expand.grid(.mtry=mtry)
+rf_default = train(SalePrice~., 
+                      data=lm_data, 
+                      method='rf', 
+                      metric='RMSE', 
+                      tuneGrid=tunegrid, 
+                      trControl=control)
+print(rf_default)
+```
+
+```{r}
+c = c("LotArea","OverallQual","OverallCond", "TotalBsmtSF","GarageArea","YearBuilt","SalePrice")
+lm_data = data_numeric[c]
+control <- trainControl(method='boot', number=10)
+#Metric compare model is Accuracy
+metric <- "RMSE"
+set.seed(101)
+#Number randomely variable selected is mtry
+
+ls_model = train(SalePrice~., 
+                      data=lm_data, 
+                      method='lm', 
+                      metric='RMSE')
+print(ls_model)
+```
+
+```{r}
+lm_data.cov <- cov(lm_data) #covariance 
+lm_data.cor <- cor(lm_data) # correlation 
+
+# export table to Latex or HTML
+xtable(lm_data.cov, digits=5) 
+xtable(lm_data.cor, digits=3)
+
+pairs(lm_data)
+
+
+
+#PCA
+lm_data.pca <- princomp(lm_data, cor = TRUE)
+# cor=TRUE indicates correlation matrix is used.
+
+s <- summary(lm_data.pca, loadings = TRUE,cutoff=0)
+s
+s$sdev
+```
+
+```{r}
+K <- 6;
+x.lm_data <- lm_data[,c(1:7)];
+km.lm_data <- kmeans(x.lm_data,centers=K,nstart=20, iter=20)
+
+km.lm_data$cluster
+
+plot(x.lm_data[km.lm_data$cluster==2,6:7],pch="x")
+
+plot(km.lm_data$centers[1,],type="l",col="red",ylab="")
+lines(km.lm_data$centers[2,],type="l", col="green",ylab="")
+
+cor(x.lm_data$YearBuilt, x.lm_data$SalePrice)
+str(km.lm_data)
+```
+```{r}
+X = df[,-51]
+y = df[,51]
+```
+
+```{r}
+set.seed(3456)
+testInd = createDataPartition(y=1:length(y), p = 0.2, list = FALSE)
+X_test = X[testInd, ]
+y_test = y[testInd]
+X_train = X[-testInd, ]
+y_train  = y[-testInd]
+```
+
+```{r}
+#q4
+c = c("LotArea","OverallQual","OverallCond", "TotalBsmtSF","GarageArea","YearBuilt","SalePrice")
+lm_data = data_numeric[c]
+lm
+```
+
+```{r}
+fviz_cluster(km.lm_data, data = lm_data)
+```
+
